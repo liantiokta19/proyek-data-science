@@ -1,96 +1,91 @@
-import os
 import streamlit as st
 import pandas as pd
 import joblib
+import os
 import numpy as np
 
-# Konfigurasi Halaman
+# --- Konfigurasi Halaman ---
 st.set_page_config(
     page_title="Prediksi Harga Mobil Australia",
     page_icon="🚗",
     layout="centered"
 )
 
-st.write("📂 **DEBUGGING INFO:**")
-st.write(f"Lokasi saat ini (cwd): `{os.getcwd()}`")
-try:
-    files = os.listdir(os.getcwd())
-    st.write(f"Daftar file di folder ini: `{files}`")
-except Exception as e:
-    st.error(f"Gagal list directory: {e}")
-
-# --- FUNGSI LOAD MODEL ---
+# --- FUNGSI LOAD MODEL (FINAL & AMAN) ---
 @st.cache_resource
 def load_model_resources():
-    try:
-        # Memuat file model yang sudah disimpan dari Notebook
-        data = joblib.load('car_price_prediction_model.pkl')
-        return data
-    except FileNotFoundError:
+    # 1. Dapatkan lokasi (path) absolut dari file app.py ini
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 2. Gabungkan dengan nama file model
+    model_path = os.path.join(current_dir, 'car_price_prediction_model.pkl')
+    
+    # 3. Cek keberadaan file (untuk debugging)
+    if not os.path.exists(model_path):
+        st.error(f"CRITICAL ERROR: File model tidak ditemukan di: {model_path}")
+        st.write("Daftar file di folder ini:", os.listdir(current_dir))
         return None
+
+    try:
+        data = joblib.load(model_path)
+        return data
+    except Exception as e:
+        st.error(f"Gagal memuat model. Error: {e}")
+        return None
+
+# --- MAIN APP ---
 
 # Load Resources
 resources = load_model_resources()
 
 if resources is None:
-    st.error("File 'car_price_prediction_model.pkl' tidak ditemukan. Silakan jalankan kode penyimpanan di Notebook dan pindahkan file .pkl ke folder ini.")
-    st.stop()
+    st.stop() # Hentikan aplikasi jika model gagal dimuat
 
+# Ekstrak komponen model
 model = resources['model']
 encoders = resources['encoders']
 scaler = resources['scaler']
 feature_names = resources['feature_names']
 
-# Judul
+# Judul Aplikasi
 st.title("🚗 Prediksi Kategori Harga Kendaraan")
-st.markdown("Aplikasi ini menggunakan model **Random Forest** yang telah dilatih (Pre-trained) untuk memprediksi kategori harga.")
+st.markdown("Aplikasi ini memprediksi apakah harga mobil tergolong **Murah**, **Sedang**, **Mahal**, atau **Sangat Mahal** berdasarkan spesifikasinya.")
 
-# --- INPUT USER ---
-st.sidebar.header("Masukkan Spesifikasi Mobil")
-
-# Kita perlu mengambil opsi unik untuk Dropdown dari Encoders yang tersimpan
-# Encoders adalah dictionary: {'Brand': LabelEncoderObject, ...}
+# --- SIDEBAR INPUT ---
+st.sidebar.header("Spesifikasi Mobil")
 
 def get_options(col_name):
+    """Mengambil opsi unik dari encoder yang tersimpan"""
     if col_name in encoders:
         return list(encoders[col_name].classes_)
     return []
-
-# Form Input (Disesuaikan dengan fitur yang ada di X_train notebook Anda)
-# Pastikan urutan dan nama fitur input ini nanti cocok dengan feature_names model
 
 with st.form("prediction_form"):
     col1, col2 = st.columns(2)
     
     with col1:
         brand = st.selectbox('Brand', get_options('Brand'))
-        model_car = st.selectbox('Model', get_options('Model')) # Notebook pakai Model
-        year = st.number_input('Year', min_value=1990, max_value=2024, value=2020)
-        transmission = st.selectbox('Transmission', get_options('Transmission'))
+        model_car = st.selectbox('Model', get_options('Model'))
+        year = st.number_input('Tahun Pembuatan', min_value=1990, max_value=2025, value=2020)
+        transmission = st.selectbox('Transmisi', get_options('Transmission'))
         
     with col2:
-        body_type = st.selectbox('Body Type', get_options('BodyType'))
-        fuel_type = st.selectbox('Fuel Type', get_options('FuelType'))
-        kilometres = st.number_input('Kilometres', min_value=0, value=50000)
-        # Input numerik lain sesuai notebook
-        cylinders = st.number_input('Cylinders', min_value=2, max_value=12, value=4)
-        fuel_consumption = st.number_input('Fuel Consumption (L/100km)', min_value=0.0, value=8.0)
-        engine_size = st.number_input('Engine Size (L)', min_value=0.0, value=2.0)
+        body_type = st.selectbox('Tipe Body', get_options('BodyType'))
+        fuel_type = st.selectbox('Tipe Bahan Bakar', get_options('FuelType'))
+        kilometres = st.number_input('Kilometer (km)', min_value=0, value=50000, step=1000)
         
-    # Input tambahan yang mungkin ada di model notebook (Set default jika user tidak perlu isi)
-    # Karena di notebook X memiliki banyak kolom, kita harus membuat dummy data untuk kolom yang tidak ada di input form
-    # agar bentuk array-nya sama.
-    
-    submit = st.form_submit_button("Prediksi Harga")
+        # Input tambahan (sesuaikan dengan fitur di notebook)
+        cylinders = st.number_input('Jumlah Silinder', min_value=2, max_value=12, value=4)
+        # Tambahkan input lain jika diperlukan oleh model
+        
+    submit = st.form_submit_button("🔍 Prediksi Harga")
 
 if submit:
-    # 1. Siapkan Dictionary Data Input
-    # Kita harus membuat DataFrame yang strukturnya SAMA PERSIS dengan X_train di notebook
+    # 1. Siapkan Data Input (sesuai urutan feature_names saat training)
+    input_data = {col: [0] for col in feature_names} # Inisialisasi dengan 0
     
-    # Buat data awal dengan nilai default (0 atau mode) untuk semua fitur yang dilatih
-    input_data = {col: [0] for col in feature_names}
-    
-    # Isi data dari input user
+    # 2. Isi data dari form
+    # Pastikan nama key di sini SAMA PERSIS dengan nama kolom di feature_names
     input_data['Brand'] = [brand]
     input_data['Model'] = [model_car]
     input_data['Year'] = [year]
@@ -98,71 +93,92 @@ if submit:
     input_data['BodyType'] = [body_type]
     input_data['FuelType'] = [fuel_type]
     input_data['Kilometres'] = [kilometres]
-    input_data['CylindersinEngine'] = [f"{cylinders} cyl"] # Format harus sama dengan raw data sebelum cleaning di notebook jika encoder butuh raw
-    # Atau jika di notebook sudah jadi angka:
-    # input_data['CylindersinEngine'] = [cylinders] 
     
-    # Catatan: Di notebook Anda melakukan cleaning '4 cyl' -> 4.
-    # Karena kita memuat LabelEncoder dari notebook, kita harus hati-hati.
-    # Jika LabelEncoder di-fit SETELAH cleaning (menjadi angka), maka input harus angka.
-    # Jika LabelEncoder di-fit SEBELUM cleaning (masih string), input harus string.
+    # Handle kolom khusus (sesuai preprocessing notebook)
+    # Di notebook Anda melakukan cleaning '4 cyl' -> 4 (int).
+    # Jadi jika model dilatih dengan data bersih, inputnya langsung angka.
+    if 'CylindersinEngine' in feature_names:
+        input_data['CylindersinEngine'] = [cylinders] # Asumsi di notebook sudah jadi angka
     
-    # Berdasarkan Notebook Anda: Cleaning dilakukan DULUAN, baru Label Encoding.
-    # Jadi input ke model harus sudah bersih (angka).
-    
-    # Buat DataFrame sementara
+    # Buat DataFrame
     df_input = pd.DataFrame(input_data)
     
-    # --- PREPROCESSING INPUT USER (Meniru Notebook) ---
-    # Kita override nilai manual yang sudah bersih ke kolom dataframe
-    df_input['Cylinders'] = cylinders # Fitur hasil cleaning di notebook
-    df_input['FuelConsumption'] = fuel_consumption # Fitur hasil cleaning
-    df_input['EngineSize'] = engine_size # Fitur hasil cleaning
-    
-    # Label Encoding untuk kolom Kategori
-    # Loop semua kolom, jika ada di encoder, transform
-    for col in df_input.columns:
-        if col in encoders:
-            try:
-                # Ambil nilai input
-                val = df_input.at[0, col]
-                # Transform menggunakan encoder yang tersimpan
-                df_input.at[0, col] = encoders[col].transform([val])[0]
-            except Exception as e:
-                # Jika nilai tidak dikenal (misal model mobil baru), pakai nilai default/pertama
-                df_input.at[0, col] = 0
-    
-    # Scaling (StandardScaler)
-    # Pastikan urutan kolom df_input SAMA dengan feature_names
-    # Karena notebook Anda mungkin membuat kolom baru saat cleaning (seperti 'Cylinders' dari 'CylindersinEngine')
-    # Kita harus menyusun ulang df_input agar hanya berisi kolom yang ada di feature_names
-    
-    # Filter hanya kolom yang digunakan model
-    df_final = df_input[feature_names] 
-    
-    # Lakukan Scaling
+    # --- PREPROCESSING ---
     try:
+        # Encode Kategorikal
+        for col in df_input.columns:
+            if col in encoders:
+                # Handle unknown labels (jika ada input baru yang tidak dikenal model)
+                val = df_input.at[0, col]
+                if val in encoders[col].classes_:
+                    df_input.at[0, col] = encoders[col].transform([val])[0]
+                else:
+                    # Fallback strategis: pakai nilai modus/pertama
+                    df_input.at[0, col] = encoders[col].transform([encoders[col].classes_[0]])[0]
+
+        # Scaling (Normalisasi)
+        # Pastikan urutan kolom sama persis dengan saat fit scaler
+        df_final = df_input[feature_names]
         X_scaled = scaler.transform(df_final)
         
-        # Prediksi
+        # --- PREDIKSI ---
         prediction_idx = model.predict(X_scaled)[0]
         
-        # Mapping hasil prediksi (0,1,2,3) kembali ke Label (Murah, Sedang, dll)
-        # Di notebook: labels = ['Murah', 'Sedang', 'Mahal', 'Sangat Mahal']
-        # Tapi LabelEncoder mengurutkan abjad: Mahal, Murah, Sangat Mahal, Sedang?
-        # Kita perlu cek classes_ dari target di notebook. 
-        # Asumsi sederhana berdasarkan binning manual Anda:
+        # --- TAMPILKAN HASIL ---
+        # Mapping manual hasil (karena LabelEncoder mengurutkan abjad)
+        # Biasanya: 0=Mahal, 1=Murah, 2=Sangat Mahal, 3=Sedang (Urutan Abjad)
+        # ATAU sesuai urutan di notebook: 0=Murah, 1=Sedang, 2=Mahal, 3=Sangat Mahal (jika pakai pd.cut codes)
         
-        # Kategori harga di notebook Anda menggunakan pd.cut dengan labels=['Murah', 'Sedang', 'Mahal', 'Sangat Mahal']
-        # Hasil pd.cut adalah kategori berurut.
+        # Kita ambil aman dengan menampilkan langsung nama kelas dari model
+        # Jika model klasifikasi, classes_ akan berisi label aslinya
         
-        st.success(f"Prediksi Kategori Harga: **{prediction_idx}**")
+        # Cek tipe prediksi
+        final_label = str(prediction_idx) # Default
         
-        # Tampilkan Probabilitas
+        # Jika model menyimpan classes (RandomForestClassifier punya ini)
+        # Namun karena Anda menyimpan model yang sudah di-fit dengan y yang sudah di-encode,
+        # outputnya adalah ANGKA (0, 1, 2, 3).
+        
+        # Logika Mapping dari Notebook Anda:
+        # bins = [0, 20000, 40000, 60000, np.inf]
+        # labels = ['Murah', 'Sedang', 'Mahal', 'Sangat Mahal']
+        # pd.cut(..., labels=labels) -> Kemudian di-LabelEncoder-kan.
+        
+        # Urutan LabelEncoder (Abjad): 
+        # 0: Mahal
+        # 1: Murah
+        # 2: Sangat Mahal
+        # 3: Sedang
+        
+        label_mapping = {
+            0: "Mahal (> 40k - 60k AUD)",
+            1: "Murah (< 20k AUD)",
+            2: "Sangat Mahal (> 60k AUD)",
+            3: "Sedang (20k - 40k AUD)"
+        }
+        
+        final_result = label_mapping.get(prediction_idx, f"Kategori {prediction_idx}")
+
+        st.subheader("Hasil Prediksi:")
+        
+        if "Murah" in final_result:
+            st.success(f"💰 {final_result}")
+        elif "Sedang" in final_result:
+            st.info(f"💵 {final_result}")
+        elif "Mahal" in final_result:
+            st.warning(f"💸 {final_result}")
+        else:
+            st.error(f"💎 {final_result}")
+            
+        # Probabilitas
         proba = model.predict_proba(X_scaled)
-        st.write("Tingkat Keyakinan Model:")
-        st.bar_chart(pd.DataFrame(proba.T, columns=["Probabilitas"], index=model.classes_))
+        st.write("---")
+        st.write("Probabilitas per Kategori:")
         
+        # Buat dataframe probabilitas dengan nama label yang benar
+        proba_df = pd.DataFrame(proba, columns=[label_mapping[i] for i in range(4)])
+        st.bar_chart(proba_df.T)
+
     except Exception as e:
-        st.error(f"Terjadi kesalahan dalam pemrosesan data: {e}")
-        st.warning("Pastikan fitur yang dimasukkan di input sama dengan fitur yang digunakan saat training di Notebook.")
+        st.error(f"Terjadi kesalahan saat memproses data: {e}")
+        st.warning("Detail Error (untuk developer): Pastikan jumlah dan nama fitur input sama persis dengan 'feature_names' di model.")
