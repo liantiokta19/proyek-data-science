@@ -11,6 +11,14 @@ st.set_page_config(
     layout="centered"
 )
 
+st.write("📂 **DEBUGGING INFO:**")
+st.write(f"Lokasi saat ini (cwd): `{os.getcwd()}`")
+try:
+    files = os.listdir(os.getcwd())
+    st.write(f"Daftar file di folder ini: `{files}`")
+except Exception as e:
+    st.error(f"Gagal list directory: {e}")
+
 # --- FUNGSI LOAD MODEL ---
 @st.cache_resource
 def load_model_resources():
